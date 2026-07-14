@@ -12,6 +12,8 @@
  */
 class SymbolConsumer : public clang::index::IndexDataConsumer {
 public:
+    SymbolConsumer();
+
     void initialize(clang::ASTContext& context) override;
 
     bool handleDeclOccurrence(
