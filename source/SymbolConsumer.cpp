@@ -10,14 +10,17 @@ constexpr auto reference_role = static_cast<clang::index::SymbolRoleSet>(clang::
 constexpr auto declaration_role = static_cast<clang::index::SymbolRoleSet>(clang::index::SymbolRole::Declaration);
 
 
-void SymbolConsumer::initialize(clang::ASTContext& context) {
-    this->context = &context;
-
+SymbolConsumer::SymbolConsumer() {
     this->document = nlohmann::json::object({
+        {"version", 1},
         {"files", nlohmann::json::object()},
         {"symbols", nlohmann::json::object()},
         {"references", nlohmann::json::array()}
     });
+}
+
+void SymbolConsumer::initialize(clang::ASTContext& context) {
+    this->context = &context;
 }
 
 bool SymbolConsumer::handleDeclOccurrence(
