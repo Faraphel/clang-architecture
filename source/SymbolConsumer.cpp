@@ -8,6 +8,7 @@
 
 constexpr auto reference_role = static_cast<clang::index::SymbolRoleSet>(clang::index::SymbolRole::Reference);
 constexpr auto declaration_role = static_cast<clang::index::SymbolRoleSet>(clang::index::SymbolRole::Declaration);
+constexpr auto definition_role = static_cast<clang::index::SymbolRoleSet>(clang::index::SymbolRole::Definition);
 
 
 SymbolConsumer::SymbolConsumer() {
@@ -71,7 +72,7 @@ bool SymbolConsumer::handleDeclOccurrence(
     }
 
     // check for the kind of usage of this symbol
-    if (roles & declaration_role) {
+    if (roles & (declaration_role | definition_role)) {
 
         // skip if the symbol is already registered
         if (this->document["symbols"].contains(symbol_usr))
