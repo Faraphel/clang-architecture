@@ -24,6 +24,62 @@ void SymbolConsumer::initialize(clang::ASTContext& context) {
     this->context = &context;
 }
 
+
+bool SymbolConsumer::handleAnyOccurrence(
+    const std::string& usr,
+    const std::string& name,
+    const std::string& kind,
+    const clang::index::SymbolRoleSet& roles,
+    const clang::SourceLocation& location,
+    const clang::PresumedLoc& presumed
+) {
+    // get the source manager
+    const clang::SourceManager &source_manager = this->context->getSourceManager();
+
+    // register the file
+    {
+        // check if the file is already registered
+        const std::string file_name = presumed.getFilename();
+        if (!this->document["files"].contains(file_name)) {
+            // if not already registered, add a record
+            this->document["files"][file_name] = nlohmann::json::object({
+                {"system", source_manager.isInSystemHeader(location)}
+            });
+        }
+    }
+
+    // check for the kind of usage of this symbol
+    if (roles & (declaration_role | definition_role)) {
+
+        // skip if the symbol is already registered
+        if (this->document["symbols"].contains(usr))
+            return true;
+
+        // register the symbol
+        this->document["symbols"][usr] = nlohmann::json::object({
+            {"name", name},
+            {"kind", kind},
+            {"system", source_manager.isInSystemHeader(location)},
+            {"file", presumed.getFilename()},
+            {"line", presumed.getLine()},
+            {"column", presumed.getColumn()}
+        });
+
+    } else if (roles & reference_role) {
+
+        // register the symbol reference
+        this->document["references"].push_back(nlohmann::json::object({
+            {"usr", usr},
+            {"file", presumed.getFilename()},
+            {"line", presumed.getLine()},
+            {"column", presumed.getColumn()}
+        }));
+
+    }
+
+    return true;
+}
+
 bool SymbolConsumer::handleDeclOccurrence(
     const clang::Decl* declaration,
     const clang::index::SymbolRoleSet roles,
@@ -35,72 +91,90 @@ bool SymbolConsumer::handleDeclOccurrence(
     const clang::SourceManager &source_manager = this->context->getSourceManager();
 
     // get the location of the occurrence
-    const clang::SourceLocation occurrence_location = source_manager.getExpansionLoc(raw_location);
-    if (occurrence_location.isInvalid())
+    const clang::SourceLocation location = source_manager.getExpansionLoc(raw_location);
+    if (location.isInvalid())
         return true;
 
     // get the exact information about the place where the symbol is used
-    const clang::PresumedLoc occurrence_presumed = source_manager.getPresumedLoc(occurrence_location);
-    if (occurrence_presumed.isInvalid())
+    const clang::PresumedLoc presumed = source_manager.getPresumedLoc(location);
+    if (presumed.isInvalid())
         return true;
 
     // get the Unified Symbol Resolution (USR) for the symbol
     // this is a unique identifier across the different translation units for this symbol
-    std::string symbol_usr;
+    std::string usr;
     {
-        usr_t symbol_usr_raw;
-        if (clang::index::generateUSRForDecl(declaration, symbol_usr_raw))
+        usr_t usr_raw;
+        if (clang::index::generateUSRForDecl(declaration, usr_raw))
             return true;
 
-        symbol_usr = symbol_usr_raw.str().str();
+        usr = usr_raw.str().str();
     }
 
-    std::string symbol_name = "?";
+    // get the name of the symbol
+    std::string name = "?";
     if (const auto *named_declaration = llvm::dyn_cast<clang::NamedDecl>(declaration); named_declaration != nullptr)
-        symbol_name = named_declaration->getNameAsString();
+        name = named_declaration->getNameAsString();
 
-    // register the file
+    // delegate to the generic handler
+    return this->handleAnyOccurrence(
+        usr,
+        name,
+        declaration->getDeclKindName(),
+        roles,
+        location,
+        presumed
+    );
+}
+
+
+bool SymbolConsumer::handleMacroOccurrence(
+    const clang::IdentifierInfo* identifier,
+    const clang::MacroInfo* macro,
+    clang::index::SymbolRoleSet roles,
+    clang::SourceLocation raw_location
+) {
+    // get the source manager
+    const clang::SourceManager &source_manager = this->context->getSourceManager();
+
+    // get the location of the occurrence
+    const clang::SourceLocation location = source_manager.getExpansionLoc(raw_location);
+    if (location.isInvalid())
+        return true;
+
+    // get the exact information about the place where the macro is used
+    const clang::PresumedLoc presumed = source_manager.getPresumedLoc(location);
+    if (presumed.isInvalid())
+        return true;
+
+    // get the Unified Symbol Resolution (USR) for the macro
+    // this is a unique identifier across the different translation units for this macro
+    std::string usr;
     {
-        // check if the file is already registered
-        const std::string file_name = occurrence_presumed.getFilename();
-        if (!this->document["files"].contains(file_name)) {
-            // if not already registered, add a record
-            this->document["files"][file_name] = nlohmann::json::object({
-                {"system", source_manager.isInSystemHeader(occurrence_location)}
-            });
-        }
-    }
-
-    // check for the kind of usage of this symbol
-    if (roles & (declaration_role | definition_role)) {
-
-        // skip if the symbol is already registered
-        if (this->document["symbols"].contains(symbol_usr))
+        usr_t usr_raw;
+        if (clang::index::generateUSRForMacro(
+            identifier->getName(),
+            macro->getDefinitionLoc(),
+            source_manager,
+            usr_raw
+        ))
             return true;
 
-        // register the symbol
-        this->document["symbols"][symbol_usr] = nlohmann::json::object({
-            {"name", symbol_name},
-            {"kind", declaration->getDeclKindName()},
-            {"system", source_manager.isInSystemHeader(occurrence_location)},
-            {"file", occurrence_presumed.getFilename()},
-            {"line", occurrence_presumed.getLine()},
-            {"column", occurrence_presumed.getColumn()}
-        });
-
-    } else if (roles & reference_role) {
-
-        // register the symbol reference
-        this->document["references"].push_back(nlohmann::json::object({
-            {"usr", symbol_usr},
-            {"file", occurrence_presumed.getFilename()},
-            {"line", occurrence_presumed.getLine()},
-            {"column", occurrence_presumed.getColumn()}
-        }));
-
+        usr = usr_raw.str().str();
     }
 
-    return true;
+    // get the name of the macro
+    const std::string name = identifier->getName().str();
+
+    // delegate to the generic handler
+    return this->handleAnyOccurrence(
+        usr,
+        name,
+        "Macro",
+        roles,
+        location,
+        presumed
+    );
 }
 
 
