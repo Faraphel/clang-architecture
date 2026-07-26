@@ -36,13 +36,17 @@ bool SymbolConsumer::handleAnyOccurrence(
     // get the source manager
     const clang::SourceManager &source_manager = this->context->getSourceManager();
 
+    // sanitize the file path
+    std::filesystem::path file_path = presumed.getFilename();
+    if (exists(file_path))
+        file_path = canonical(file_path);
+
     // register the file
     {
         // check if the file is already registered
-        const std::string file_name = presumed.getFilename();
-        if (!this->document["files"].contains(file_name)) {
+        if (!this->document["files"].contains(file_path)) {
             // if not already registered, add a record
-            this->document["files"][file_name] = nlohmann::json::object({
+            this->document["files"][file_path] = nlohmann::json::object({
                 {"system", source_manager.isInSystemHeader(location)}
             });
         }
@@ -60,7 +64,7 @@ bool SymbolConsumer::handleAnyOccurrence(
             {"name", name},
             {"kind", kind},
             {"system", source_manager.isInSystemHeader(location)},
-            {"file", presumed.getFilename()},
+            {"file", file_path.string()},
             {"line", presumed.getLine()},
             {"column", presumed.getColumn()}
         });
@@ -70,7 +74,7 @@ bool SymbolConsumer::handleAnyOccurrence(
         // register the symbol reference
         this->document["references"].push_back(nlohmann::json::object({
             {"usr", usr},
-            {"file", presumed.getFilename()},
+            {"file", file_path.string()},
             {"line", presumed.getLine()},
             {"column", presumed.getColumn()}
         }));
@@ -83,9 +87,9 @@ bool SymbolConsumer::handleAnyOccurrence(
 bool SymbolConsumer::handleDeclOccurrence(
     const clang::Decl* declaration,
     const clang::index::SymbolRoleSet roles,
-    llvm::ArrayRef<clang::index::SymbolRelation> relations,
+    const llvm::ArrayRef<clang::index::SymbolRelation> relations,
     const clang::SourceLocation raw_location,
-    ASTNodeInfo node
+    const ASTNodeInfo node
 ) {
     // get the source manager
     const clang::SourceManager &source_manager = this->context->getSourceManager();
@@ -131,8 +135,8 @@ bool SymbolConsumer::handleDeclOccurrence(
 bool SymbolConsumer::handleMacroOccurrence(
     const clang::IdentifierInfo* identifier,
     const clang::MacroInfo* macro,
-    clang::index::SymbolRoleSet roles,
-    clang::SourceLocation raw_location
+    const clang::index::SymbolRoleSet roles,
+    const clang::SourceLocation raw_location
 ) {
     // get the source manager
     const clang::SourceManager &source_manager = this->context->getSourceManager();
