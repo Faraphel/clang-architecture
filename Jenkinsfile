@@ -65,7 +65,7 @@ pipeline {
         stage('Document') {
             steps {
                 sh '''
-                doxygen
+                DOXYGEN_PROJECT_NUMBER=$GIT_COMMIT doxygen Doxyfile
                 '''
             }
         }
