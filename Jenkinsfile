@@ -86,4 +86,18 @@ pipeline {
             }
         }
     }
+
+    post {
+        success {
+            archiveArtifacts(
+                artifacts: '''
+                    build/release/*.deb,
+                    build/release/*.rpm,
+                    build/release/*.tar.gz,
+                    build/release/*.zip
+                '''.stripIndent().trim(),
+                fingerprint: true
+            )
+        }
+    }
 }
