@@ -7,7 +7,34 @@ project(clang-architecture
     LANGUAGES C CXX
 )
 
+# Options
+
+option(ENABLE_COVERAGE "Enable code coverage" OFF)
+option(ENABLE_PROFILING "Enable profiling" OFF)
+
+add_library(${PROJECT_NAME}-instrumentation INTERFACE)
+
+if(ENABLE_COVERAGE)
+        target_compile_options(${PROJECT_NAME}-instrumentation INTERFACE
+                --coverage
+        )
+        target_link_options(${PROJECT_NAME}-instrumentation INTERFACE
+                --coverage
+        )
+endif()
+
+if(ENABLE_PROFILING)
+        target_compile_options(${PROJECT_NAME}-instrumentation INTERFACE
+                -pg
+        )
+        target_link_options(${PROJECT_NAME}-instrumentation INTERFACE
+                -pg
+        )
+endif()
+
 # Dependencies
+
+include(GNUInstallDirs)
 
 find_package(LLVM REQUIRED CONFIG)
 find_package(Clang REQUIRED CONFIG)
@@ -18,38 +45,67 @@ message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 
 # Build
 
+add_library(${PROJECT_NAME}-library STATIC
+        ./source/SymbolActionFactory.cpp
+        ./source/SymbolConsumer.cpp
+)
+target_include_directories(${PROJECT_NAME}-library PUBLIC
+        ./source
+        ${LLVM_INCLUDE_DIRS}
+        ${CLANG_INCLUDE_DIRS}
+)
+target_link_libraries(${PROJECT_NAME}-library PUBLIC
+        ${PROJECT_NAME}-instrumentation
+        nlohmann_json::nlohmann_json
+        clang-cpp
+        LLVM
+)
+set_target_properties(${PROJECT_NAME}-library PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+)
+
 add_executable(${PROJECT_NAME}
-	./source/main.cpp
-	./source/SymbolActionFactory.cpp
-	./source/SymbolConsumer.cpp
-)
-set_target_properties(${PROJECT_NAME} PROPERTIES
-	CXX_STANDARD 20
-	CXX_STANDARD_REQUIRED ON
-	CXX_EXTENSIONS OFF
-)
-target_include_directories(${PROJECT_NAME} PRIVATE
-	${LLVM_INCLUDE_DIRS}
-	${CLANG_INCLUDE_DIRS}
+	    ./source/main.cpp
 )
 target_link_libraries(${PROJECT_NAME} PRIVATE
-        nlohmann_json::nlohmann_json
-        clangAST
-        clangIndex
-        clangTooling
-        LLVM
+        ${PROJECT_NAME}-instrumentation
+        ${PROJECT_NAME}-library
+)
+set_target_properties(${PROJECT_NAME} PROPERTIES
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
 )
 
 # Install
 
-include(GNUInstallDirs)
 install(TARGETS ${PROJECT_NAME}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
+# Tests
+
+include(CTest)
+
+find_package(Catch2 REQUIRED)
+include(Catch)
+
+add_executable(${PROJECT_NAME}-tests
+        tests/main.cpp
+        tests/01_simple_function.cpp
+)
+target_link_libraries(${PROJECT_NAME}-tests PRIVATE
+        ${PROJECT_NAME}-instrumentation
+        ${PROJECT_NAME}-library
+        Catch2::Catch2
+)
+catch_discover_tests(${PROJECT_NAME}-tests)
+
 # Package
 
-set(CPACK_GENERATOR "DEB;RPM")
+set(CPACK_GENERATOR "DEB;RPM;TGZ;ZIP")
 
 set(CPACK_PACKAGE_NAME ${PROJECT_NAME})
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY ${PROJECT_DESCRIPTION})
