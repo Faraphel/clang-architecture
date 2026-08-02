@@ -21,6 +21,9 @@ pipeline {
                 # document
                 apt-get install -y doxygen
 
+                # analysis
+                apt-get install -y clang-tools analyze-build clang-tidy
+
                 # package
                 apt-get install -y rpm
                 '''
@@ -41,6 +44,25 @@ pipeline {
                         ]
                     ]
                 ])
+
+                script {
+                    env.GIT_COMMIT = sh(
+                        script: 'git rev-parse HEAD',
+                        returnStdout: true
+                    ).trim()
+                    env.GIT_REPO_URL = sh(
+                        script: 'git config --get remote.origin.url',
+                        returnStdout: true
+                    ).trim()
+                    env.GIT_REPO_NAME = sh(
+                         script: "basename -s .git '${env.GIT_REPO_URL}'",
+                         returnStdout: true
+                    ).trim()
+
+                    echo "Repository URL: ${env.GIT_REPO_URL}"
+                    echo "Repository Name: ${env.GIT_REPO_NAME}"
+                    echo "Repository Commit: ${env.GIT_COMMIT}"
+                }
             }
         }
 
@@ -75,6 +97,61 @@ pipeline {
                 sh '''
                 ctest --preset debug --output-on-failure
                 '''
+            }
+        }
+
+        stage('Clang Static Analyzer') {
+            steps {
+                sh '''
+                mkdir -p ./build/debug/reports/clangsa/
+
+                analyze-build \
+                    --cdb build/debug/compile_commands.json \
+                    --stats \
+                    --plist \
+                    --exclude external \
+                    --exclude tests \
+                    --output ./build/debug/reports/clangsa
+                '''
+            }
+        }
+
+        stage('Clang-Tidy') {
+            steps {
+                sh '''
+                mkdir -p ./build/debug/reports/clangtidy/
+
+                clang-tidy \
+                    -p build/debug \
+                    --header-filter=./source/* \
+                    source/* \
+                    tests/* \
+                > ./build/debug/reports/clangtidy/report.txt
+                '''
+            }
+        }
+
+        stage('Report') {
+            steps {
+                script {
+                    def scannerHome = tool 'SonarScanner'
+
+                    withSonarQubeEnv('SonarQube') {
+                        sh """
+                        ${scannerHome}/bin/sonar-scanner \
+                            -Dsonar.projectKey=${GIT_REPO_NAME} \
+                            -Dsonar.projectName=Clang-Architecture \
+                            -Dsonar.projectVersion=${GIT_COMMIT} \
+                            -Dsonar.sources=source,viewer/javascript \
+                            -Dsonar.exclusions=viewer/dist/**/* \
+                            -Dsonar.test.inclusions=tests/**/* \
+                            -Dsonar.cxx.jsonCompilationDatabase=build/debug/compile_commands.json \
+                            -Dsonar.cxx.file.suffixes=.cpp,.c,.hpp,.h \
+                            -Dsonar.cxx.clangsa.reportPaths=build/debug/reports/clangsa/ \
+                            -Dsonar.cxx.clangtidy.reportPaths=./build/debug/reports/clangtidy/
+                        """
+                    }
+                }
             }
         }
 
