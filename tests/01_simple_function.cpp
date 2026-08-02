@@ -1,4 +1,4 @@
-#include <catch2/catch.hpp>
+#include <catch2/catch_test_macros.hpp>
 #include <clang/Index/IndexingOptions.h>
 #include <clang/Tooling/Tooling.h>
 #include <nlohmann/json.hpp>

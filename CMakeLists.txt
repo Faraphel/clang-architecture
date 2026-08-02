@@ -39,6 +39,7 @@ include(GNUInstallDirs)
 find_package(LLVM REQUIRED CONFIG)
 find_package(Clang REQUIRED CONFIG)
 add_subdirectory(./external/json)
+add_subdirectory(./external/Catch2)
 
 message(STATUS "LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
@@ -88,18 +89,15 @@ install(TARGETS ${PROJECT_NAME}
 # Tests
 
 include(CTest)
-
-find_package(Catch2 REQUIRED)
 include(Catch)
 
 add_executable(${PROJECT_NAME}-tests
-        tests/main.cpp
         tests/01_simple_function.cpp
 )
 target_link_libraries(${PROJECT_NAME}-tests PRIVATE
         ${PROJECT_NAME}-instrumentation
         ${PROJECT_NAME}-library
-        Catch2::Catch2
+        Catch2::Catch2WithMain
 )
 catch_discover_tests(${PROJECT_NAME}-tests)
 
