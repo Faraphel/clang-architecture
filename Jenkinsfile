@@ -98,6 +98,15 @@ pipeline {
                 '''.stripIndent().trim(),
                 fingerprint: true
             )
+
+            publishHTML([
+                allowMissing: false,
+                alwaysLinkToLastBuild: true,
+                keepAll: true,
+                reportDir: 'docs/html',
+                reportFiles: 'index.html',
+                reportName: 'Doxygen Documentation'
+            ])
         }
     }
 }
