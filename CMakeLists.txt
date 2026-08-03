@@ -11,6 +11,8 @@ project(clang-architecture
 
 option(ENABLE_COVERAGE "Enable code coverage" OFF)
 option(ENABLE_PROFILING "Enable profiling" OFF)
+option(ENABLE_TESTS "Enable tests" OFF)
+
 
 add_library(${PROJECT_NAME}-instrumentation INTERFACE)
 
@@ -39,7 +41,6 @@ include(GNUInstallDirs)
 find_package(LLVM REQUIRED CONFIG)
 find_package(Clang REQUIRED CONFIG)
 add_subdirectory(./external/json)
-add_subdirectory(./external/Catch2)
 
 message(STATUS "LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
@@ -88,18 +89,22 @@ install(TARGETS ${PROJECT_NAME}
 
 # Tests
 
-include(CTest)
-include(Catch)
+if(ENABLE_TESTS)
+    find_package(Catch2 3 REQUIRED)
 
-add_executable(${PROJECT_NAME}-tests
-        tests/01_simple_function.cpp
-)
-target_link_libraries(${PROJECT_NAME}-tests PRIVATE
-        ${PROJECT_NAME}-instrumentation
-        ${PROJECT_NAME}-library
-        Catch2::Catch2WithMain
-)
-catch_discover_tests(${PROJECT_NAME}-tests)
+    include(CTest)
+    include(Catch)
+
+    add_executable(${PROJECT_NAME}-tests
+            tests/01_simple_function.cpp
+    )
+    target_link_libraries(${PROJECT_NAME}-tests PRIVATE
+            ${PROJECT_NAME}-instrumentation
+            ${PROJECT_NAME}-library
+            Catch2::Catch2WithMain
+    )
+    catch_discover_tests(${PROJECT_NAME}-tests)
+endif()
 
 # Package
 

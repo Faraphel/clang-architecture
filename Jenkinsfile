@@ -22,7 +22,8 @@ pipeline {
                 apt-get install -y doxygen
 
                 # analysis
-                apt-get install -y clang-tools analyze-build clang-tidy
+                apt-get install -y python3.13 python3-pip python3-venv
+                apt-get install -y clang-tools clang-tidy
 
                 # package
                 apt-get install -y rpm
@@ -37,6 +38,12 @@ pipeline {
                     branches: scm.branches,
                     userRemoteConfigs: scm.userRemoteConfigs,
                     extensions: [
+                        [
+                            $class: 'CloneOption',
+                            shallow: true,
+                            depth: 1,
+                            noTags: true
+                        ],
                         [
                             $class: 'SubmoduleOption',
                             recursiveSubmodules: true,
@@ -67,99 +74,110 @@ pipeline {
         }
 
         stage('Configure') {
-            steps {
-                sh '''
-                cmake --preset release
-                cmake --preset debug
-                '''
-            }
-        }
+            parallel {
+                stage('Configure Release') {
+                    steps {
+                        sh 'cmake --preset release'
+                    }
+                }
 
-        stage('Build') {
-            steps {
-                sh '''
-                cmake --build --parallel --preset release
-                cmake --build --parallel --preset debug
-                '''
-            }
-        }
-
-        stage('Document') {
-            steps {
-                sh '''
-                DOXYGEN_PROJECT_NUMBER=$GIT_COMMIT doxygen Doxyfile
-                '''
-            }
-        }
-
-        stage('Test') {
-            steps {
-                sh '''
-                ctest --preset debug --output-on-failure
-                '''
-            }
-        }
-
-        stage('Clang Static Analyzer') {
-            steps {
-                sh '''
-                mkdir -p ./build/debug/reports/clangsa/
-
-                analyze-build \
-                    --cdb build/debug/compile_commands.json \
-                    --stats \
-                    --plist \
-                    --exclude external \
-                    --exclude tests \
-                    --output ./build/debug/reports/clangsa
-                '''
-            }
-        }
-
-        stage('Clang-Tidy') {
-            steps {
-                sh '''
-                mkdir -p ./build/debug/reports/clangtidy/
-
-                clang-tidy \
-                    -p build/debug \
-                    --header-filter=./source/* \
-                    source/* \
-                    tests/* \
-                > ./build/debug/reports/clangtidy/report.txt
-                '''
-            }
-        }
-
-        stage('Report') {
-            steps {
-                script {
-                    def scannerHome = tool 'SonarScanner'
-
-                    withSonarQubeEnv('SonarQube') {
-                        sh """
-                        ${scannerHome}/bin/sonar-scanner \
-                            -Dsonar.projectKey=${GIT_REPO_NAME} \
-                            -Dsonar.projectName=Clang-Architecture \
-                            -Dsonar.projectVersion=${GIT_COMMIT} \
-                            -Dsonar.sources=source,viewer/javascript \
-                            -Dsonar.exclusions=viewer/dist/**/* \
-                            -Dsonar.test.inclusions=tests/**/* \
-                            -Dsonar.cxx.jsonCompilationDatabase=build/debug/compile_commands.json \
-                            -Dsonar.cxx.file.suffixes=.cpp,.c,.hpp,.h \
-                            -Dsonar.cxx.clangsa.reportPaths=build/debug/reports/clangsa/ \
-                            -Dsonar.cxx.clangtidy.reportPaths=./build/debug/reports/clangtidy/
-                        """
+                stage('Configure Debug') {
+                    steps {
+                        sh 'cmake --preset debug'
                     }
                 }
             }
         }
 
-        stage('Package') {
-            steps {
-                sh '''
-                cpack --preset release
-                '''
+        stage('Build') {
+            parallel {
+                stage('Build Release') {
+                    steps {
+                        sh 'cmake --build --parallel --preset release'
+                    }
+                }
+
+                stage('Build Debug') {
+                    steps {
+                        sh 'cmake --build --parallel --preset debug'
+                    }
+                }
+            }
+        }
+
+        stage('Post Build') {
+            parallel {
+
+                stage('Document') {
+                    steps {
+                        sh '''
+                        DOXYGEN_PROJECT_NUMBER=$GIT_COMMIT doxygen Doxyfile
+                        '''
+                    }
+                }
+
+                stage('Test') {
+                    steps {
+                        sh '''
+                        ctest --preset debug --output-on-failure
+                        '''
+                    }
+                }
+
+                stage('Analysis') {
+
+                    stages {
+
+                        stage('Analyze') {
+                            steps {
+                                sh '''
+                                # create a virtual environment
+                                python3 -m venv ./.venv
+
+                                # install the environment
+                                . ./.venv/bin/activate
+                                pip install --upgrade pip
+                                pip install codechecker
+
+                                # run the analysis
+                                ./.venv/bin/CodeChecker analyze \
+                                    --analyzers clangsa clang-tidy \
+                                    --output ./build/debug/reports \
+                                    ./build/debug/compile_commands.json
+
+                                # export as SARIF
+                                ./.venv/bin/CodeChecker parse \
+                                    --export sarif \
+                                    --output ./build/debug/reports/report.sarif \
+                                    ./build/debug/reports
+                                '''
+                            }
+                        }
+
+                        stage('Report') {
+                            steps {
+                                script {
+                                    def scannerHome = tool 'SonarScanner'
+
+                                    withSonarQubeEnv('SonarQube') {
+                                        sh """
+                                        ${scannerHome}/bin/sonar-scanner \
+                                            -Dsonar.projectKey=${GIT_REPO_NAME} \
+                                            -Dsonar.projectName=Clang-Architecture \
+                                            -Dsonar.projectVersion=${GIT_COMMIT} \
+                                            -Dsonar.sources=source,viewer/javascript \
+                                            -Dsonar.exclusions=viewer/dist/**/* \
+                                            -Dsonar.test.inclusions=tests/**/* \
+                                            -Dsonar.externalIssuesReportPaths=build/debug/reports/report.sarif
+                                        """
+                                    }
+                                }
+                            }
+                        }
+
+                    }
+
+                }
             }
         }
     }
