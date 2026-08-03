@@ -23,7 +23,7 @@ pipeline {
 
                 # analysis
                 apt-get install -y python3.13 python3-pip python3-venv
-                apt-get install -y clang-tools clang-tidy
+                apt-get install -y clang-tools clang-tidy gcovr
 
                 # package
                 apt-get install -y rpm
@@ -111,7 +111,7 @@ pipeline {
                 stage('Document') {
                     steps {
                         sh '''
-                        DOXYGEN_PROJECT_NUMBER=$GIT_COMMIT doxygen Doxyfile
+                        DOXYGEN_PROJECT_NUMBER=$GIT_COMMIT doxygen ./docs/Doxyfile
                         '''
                     }
                 }
@@ -128,7 +128,7 @@ pipeline {
 
                     stages {
 
-                        stage('Analyze') {
+                        stage('SAST') {
                             steps {
                                 sh '''
                                 # create a virtual environment
@@ -142,36 +142,34 @@ pipeline {
                                 # run the analysis
                                 ./.venv/bin/CodeChecker analyze \
                                     --analyzers clangsa clang-tidy \
-                                    --output ./build/debug/reports \
+                                    --output ./build/debug/reports/codechecker/raw \
                                     ./build/debug/compile_commands.json
 
-                                # export as SARIF
+                                # export as HTML
                                 ./.venv/bin/CodeChecker parse \
-                                    --export sarif \
-                                    --output ./build/debug/reports/report.sarif \
-                                    ./build/debug/reports
+                                    --export html \
+                                    --output ./build/debug/reports/codechecker/html \
+                                    ./build/debug/reports/codechecker/raw || true
                                 '''
                             }
                         }
 
-                        stage('Report') {
+                        stage('Coverage') {
                             steps {
-                                script {
-                                    def scannerHome = tool 'SonarScanner'
+                                sh '''
+                                mkdir -p ./build/debug/reports/coverage/html/
 
-                                    withSonarQubeEnv('SonarQube') {
-                                        sh """
-                                        ${scannerHome}/bin/sonar-scanner \
-                                            -Dsonar.projectKey=${GIT_REPO_NAME} \
-                                            -Dsonar.projectName=Clang-Architecture \
-                                            -Dsonar.projectVersion=${GIT_COMMIT} \
-                                            -Dsonar.sources=source,viewer/javascript \
-                                            -Dsonar.exclusions=viewer/dist/**/* \
-                                            -Dsonar.test.inclusions=tests/**/* \
-                                            -Dsonar.externalIssuesReportPaths=build/debug/reports/report.sarif
-                                        """
-                                    }
-                                }
+                                gcovr \
+                                    --root ./build/debug/ \
+                                    --filter 'source/.*' \
+                                    --txt-metric branch \
+                                    --html \
+                                    --html-details \
+                                    --print-summary \
+                                    --sort uncovered-percent \
+                                    --sort uncovered-number \
+                                    --output ./build/debug/reports/coverage/html/index.html
+                                '''
                             }
                         }
 
@@ -201,6 +199,24 @@ pipeline {
                 reportDir: 'docs/html',
                 reportFiles: 'index.html',
                 reportName: 'Doxygen Documentation'
+            ])
+
+            publishHTML([
+                allowMissing: false,
+                alwaysLinkToLastBuild: true,
+                keepAll: true,
+                reportDir: 'build/debug/reports/codechecker/html',
+                reportFiles: 'statistics.html',
+                reportName: 'SAST Analysis'
+            ])
+
+            publishHTML([
+                allowMissing: false,
+                alwaysLinkToLastBuild: true,
+                keepAll: true,
+                reportDir: 'build/debug/reports/coverage/html',
+                reportFiles: 'index.html',
+                reportName: 'Coverage Analysis'
             ])
         }
     }

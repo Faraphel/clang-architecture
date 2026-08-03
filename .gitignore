@@ -1,3 +1,7 @@
+# Build
 build/
-docs/
+docs/build/
 viewer/dist/
+
+# IDE
+.idea/
