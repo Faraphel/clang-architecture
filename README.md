@@ -61,13 +61,7 @@ You need to build the JavaScript sources into a single bundled file before using
 due to web browsers CORS restriction:
 
 ```bash
-mkdir ./viewer/dist
-esbuild ./viewer/javascript/main.js \
-    --bundle \
-    --format=iife \
-    --outfile="./viewer/dist/main.js" \
-    --target=es2020 \
-    --minify
+bash ./viewer/build.sh
 ```
 
 ### Usage
