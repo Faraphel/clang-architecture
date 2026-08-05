@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.25)
 
 project(clang-architecture
     VERSION 1.0.0
@@ -40,7 +40,7 @@ include(GNUInstallDirs)
 
 find_package(LLVM REQUIRED CONFIG)
 find_package(Clang REQUIRED CONFIG)
-add_subdirectory(./external/json)
+add_subdirectory(./external/json SYSTEM)
 
 message(STATUS "LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")

@@ -11,13 +11,15 @@ constexpr auto declaration_role = static_cast<clang::index::SymbolRoleSet>(clang
 constexpr auto definition_role = static_cast<clang::index::SymbolRoleSet>(clang::index::SymbolRole::Definition);
 
 
-SymbolConsumer::SymbolConsumer() {
+SymbolConsumer::SymbolConsumer(const bool keep_system) {
     this->document = nlohmann::json::object({
         {"version", 1},
         {"files", nlohmann::json::object()},
         {"symbols", nlohmann::json::object()},
         {"references", nlohmann::json::array()}
     });
+
+    this->keep_system = keep_system;
 }
 
 void SymbolConsumer::initialize(clang::ASTContext& context) {
@@ -41,13 +43,18 @@ bool SymbolConsumer::handleAnyOccurrence(
     if (exists(file_path))
         file_path = canonical(file_path);
 
+    // check if the file belong in the system headers
+    const bool is_system = source_manager.isInSystemHeader(location);
+    if (is_system && !this->keep_system)
+        return true;
+
     // register the file
     {
         // check if the file is already registered
         if (!this->document["files"].contains(file_path)) {
             // if not already registered, add a record
             this->document["files"][file_path] = nlohmann::json::object({
-                {"system", source_manager.isInSystemHeader(location)}
+                {"system", is_system}
             });
         }
     }
@@ -63,7 +70,7 @@ bool SymbolConsumer::handleAnyOccurrence(
         this->document["symbols"][usr] = nlohmann::json::object({
             {"name", name},
             {"kind", kind},
-            {"system", source_manager.isInSystemHeader(location)},
+            {"system", is_system},
             {"file", file_path.string()},
             {"line", presumed.getLine()},
             {"column", presumed.getColumn()}

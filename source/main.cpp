@@ -14,17 +14,29 @@ static llvm::cl::OptionCategory tool_category("clang-architecture options");
 
 static llvm::cl::opt<std::string> tool_option_output(
     "output",
+    llvm::cl::cat(tool_category),
     llvm::cl::Optional,
     llvm::cl::desc("output table path"),
     llvm::cl::value_desc("path"),
-    llvm::cl::init(std::filesystem::path("/dev/stdout")),
-    llvm::cl::cat(tool_category)
+    llvm::cl::init(std::filesystem::path("/dev/stdout"))
 );
 static llvm::cl::alias tool_option_output_short(
     "o",
-    llvm::cl::desc("Alias for --output"),
+    llvm::cl::cat(tool_category),
     llvm::cl::aliasopt(tool_option_output),
-    llvm::cl::cat(tool_category)
+    llvm::cl::desc("Alias for --output")
+);
+static llvm::cl::opt<bool> tool_option_keep_system(
+    "keep-system",
+    llvm::cl::cat(tool_category),
+    llvm::cl::desc("Keep the system files in the report"),
+    llvm::cl::init(false)
+);
+static llvm::cl::alias tool_option_keep_system_short(
+    "k",
+    llvm::cl::cat(tool_category),
+    llvm::cl::aliasopt(tool_option_output),
+    llvm::cl::desc("Alias for --keep-system")
 );
 
 
@@ -43,7 +55,9 @@ int main(int argc, const char* argv[]) {
     clang::tooling::ClangTool tool(options.getCompilations(), options.getSourcePathList());
 
     // create a consumer for the symbols
-    auto consumer = std::make_shared<SymbolConsumer>();
+    auto consumer = std::make_shared<SymbolConsumer>(
+        tool_option_keep_system.getValue()
+    );
 
     // focus the indexer on declarations of symbols
     clang::index::IndexingOptions index_options;

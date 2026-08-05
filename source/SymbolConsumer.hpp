@@ -12,7 +12,7 @@
  */
 class SymbolConsumer : public clang::index::IndexDataConsumer {
 public:
-    SymbolConsumer();
+    explicit SymbolConsumer(bool keep_system = false);
 
     void initialize(clang::ASTContext& context) override;
 
@@ -55,4 +55,6 @@ public:
 private:
     const clang::ASTContext *context = nullptr;  /// the AST context
     nlohmann::json document;  /// the resulting JSON document
+
+    bool keep_system = false;  /// should the system files be included in the output
 };
