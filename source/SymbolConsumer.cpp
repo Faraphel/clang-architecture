@@ -87,9 +87,9 @@ bool SymbolConsumer::handleAnyOccurrence(
 bool SymbolConsumer::handleDeclOccurrence(
     const clang::Decl* declaration,
     const clang::index::SymbolRoleSet roles,
-    const llvm::ArrayRef<clang::index::SymbolRelation> relations,
+    [[maybe_unused]] const llvm::ArrayRef<clang::index::SymbolRelation> relations,
     const clang::SourceLocation raw_location,
-    const ASTNodeInfo node
+    [[maybe_unused]] const ASTNodeInfo node
 ) {
     // get the source manager
     const clang::SourceManager &source_manager = this->context->getSourceManager();
