@@ -14,6 +14,7 @@ pipeline {
 
                 # build
                 apt-get install -y cmake ninja-build build-essential
+                apt-get install -y esbuild
 
                 # dependencies
                 apt-get install -y clang libclang-dev llvm llvm-dev libcatch2-dev
@@ -102,11 +103,31 @@ pipeline {
                         sh 'cmake --build --parallel --preset debug'
                     }
                 }
+
+                stage('Build Viewer') {
+                    steps {
+                        sh '''
+                        bash ./viewer/build.sh
+                        '''
+                    }
+                }
             }
         }
 
         stage('Post Build') {
             parallel {
+
+                stage('Self-Run') {
+                    steps {
+                        sh '''
+                        ./build/release/clang-architecture \
+                            --extra-arg=-resource-dir=$(clang -print-resource-dir) \
+                            -p ./build/debug/ \
+                            --output ./build/debug/architecture.json \
+                            $(find ./source/ -type f)
+                        '''
+                    }
+                }
 
                 stage('Document') {
                     steps {
@@ -140,15 +161,19 @@ pipeline {
                                 pip install codechecker
 
                                 # run the analysis
-                                ./.venv/bin/CodeChecker analyze \
+                                CodeChecker analyze \
                                     --analyzers clangsa clang-tidy \
                                     --output ./build/debug/reports/codechecker/raw \
+                                    --file ./source \
+                                    -- \
                                     ./build/debug/compile_commands.json
 
                                 # export as HTML
-                                ./.venv/bin/CodeChecker parse \
-                                    --export html \
-                                    --output ./build/debug/reports/codechecker/html \
+                                CodeChecker parse \
+                                    --export sarif \
+                                    --output ./build/debug/reports/codechecker/sarif/report.sarif \
+                                    --file ./source \
+                                    -- \
                                     ./build/debug/reports/codechecker/raw || true
                                 '''
                             }
@@ -163,12 +188,18 @@ pipeline {
                                     --root ./build/debug/ \
                                     --filter 'source/.*' \
                                     --txt-metric branch \
-                                    --html \
-                                    --html-details \
+                                    --cobertura ./build/debug/reports/coverage/cobertura.xml \
                                     --print-summary \
                                     --sort uncovered-percent \
-                                    --sort uncovered-number \
-                                    --output ./build/debug/reports/coverage/html/index.html
+                                    --sort uncovered-number
+                                '''
+                            }
+                        }
+
+                        stage('Package') {
+                            steps {
+                                sh '''
+                                cpack --preset release
                                 '''
                             }
                         }
@@ -187,7 +218,8 @@ pipeline {
                     build/release/*.deb,
                     build/release/*.rpm,
                     build/release/*.tar.gz,
-                    build/release/*.zip
+                    build/release/*.zip,
+                    build/debug/architecture.json
                 '''.stripIndent().trim(),
                 fingerprint: true
             )
@@ -196,27 +228,34 @@ pipeline {
                 allowMissing: false,
                 alwaysLinkToLastBuild: true,
                 keepAll: true,
-                reportDir: 'docs/html',
+                reportDir: 'docs/build/html',
                 reportFiles: 'index.html',
                 reportName: 'Doxygen Documentation'
             ])
 
-            publishHTML([
-                allowMissing: false,
-                alwaysLinkToLastBuild: true,
-                keepAll: true,
-                reportDir: 'build/debug/reports/codechecker/html',
-                reportFiles: 'statistics.html',
-                reportName: 'SAST Analysis'
-            ])
+            recordIssues(
+                enabledForFailure: true,
+                tools: [
+                    sarif(pattern: 'build/debug/reports/codechecker/sarif/report.sarif')
+                ]
+            )
+
+            recordCoverage(
+                enabledForFailure: true,
+                sourceCodeRetention: 'MODIFIED',
+                tools: [[
+                    parser: 'COBERTURA',
+                    pattern: 'build/debug/reports/coverage/cobertura.xml'
+                ]]
+            )
 
             publishHTML([
                 allowMissing: false,
                 alwaysLinkToLastBuild: true,
                 keepAll: true,
-                reportDir: 'build/debug/reports/coverage/html',
+                reportDir: 'viewer',
                 reportFiles: 'index.html',
-                reportName: 'Coverage Analysis'
+                reportName: 'Architecture Viewer'
             ])
         }
     }
