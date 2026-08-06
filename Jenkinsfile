@@ -113,14 +113,6 @@ pipeline {
                         '''
                     }
                 }
-
-                stage('Build Viewer') {
-                    steps {
-                        sh '''
-                        bash ./viewer/build.sh
-                        '''
-                    }
-                }
             }
         }
 
@@ -258,15 +250,6 @@ pipeline {
                     pattern: 'build/debug/reports/coverage/cobertura.xml'
                 ]]
             )
-
-            publishHTML([
-                allowMissing: false,
-                alwaysLinkToLastBuild: true,
-                keepAll: true,
-                reportDir: 'viewer',
-                reportFiles: 'index.html',
-                reportName: 'Architecture Viewer'
-            ])
         }
     }
 }
