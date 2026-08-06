@@ -1,5 +1,7 @@
 pipeline {
-    agent any
+    agent {
+        label 'debian'
+    }
 
     options {
         skipDefaultCheckout(true)
@@ -78,13 +80,17 @@ pipeline {
             parallel {
                 stage('Configure Release') {
                     steps {
-                        sh 'cmake --preset release'
+                        sh '''
+                        cmake --preset release
+                        '''
                     }
                 }
 
                 stage('Configure Debug') {
                     steps {
-                        sh 'cmake --preset debug'
+                        sh '''
+                        cmake --preset debug
+                        '''
                     }
                 }
             }
@@ -94,13 +100,17 @@ pipeline {
             parallel {
                 stage('Build Release') {
                     steps {
-                        sh 'cmake --build --parallel --preset release'
+                        sh '''
+                        cmake --build --parallel --preset release
+                        '''
                     }
                 }
 
                 stage('Build Debug') {
                     steps {
-                        sh 'cmake --build --parallel --preset debug'
+                        sh '''
+                        cmake --build --parallel --preset debug
+                        '''
                     }
                 }
 
@@ -182,11 +192,11 @@ pipeline {
                         stage('Coverage') {
                             steps {
                                 sh '''
-                                mkdir -p ./build/debug/reports/coverage/html/
+                                mkdir -p ./build/debug/reports/coverage/
 
                                 gcovr \
-                                    --root ./build/debug/ \
-                                    --filter 'source/.*' \
+                                    --root ./ \
+                                    --filter 'source/' \
                                     --txt-metric branch \
                                     --cobertura ./build/debug/reports/coverage/cobertura.xml \
                                     --print-summary \
