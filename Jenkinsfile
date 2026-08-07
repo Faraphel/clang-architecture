@@ -16,7 +16,7 @@ pipeline {
 
                 # build
                 apt-get install -y cmake ninja-build build-essential
-                apt-get install -y esbuild
+                apt-get install -y docker.io
 
                 # dependencies
                 apt-get install -y clang libclang-dev llvm llvm-dev libcatch2-dev
@@ -29,7 +29,7 @@ pipeline {
                 apt-get install -y clang-tools clang-tidy gcovr
 
                 # package
-                apt-get install -y rpm
+                apt-get install -y gzip rpm
                 '''
             }
         }
@@ -113,6 +113,18 @@ pipeline {
                         '''
                     }
                 }
+
+                stage('Build Docker') {
+                    steps {
+                        sh '''
+                        mkdir -p ./build/docker/
+
+                        docker build -t clang-architecture .
+                        docker save clang-architecture \
+                            | gzip > ./build/docker/clang-architecture-oci.tar.gz
+                        '''
+                    }
+                }
             }
         }
 
@@ -125,8 +137,8 @@ pipeline {
                         ./build/release/clang-architecture \
                             --extra-arg=-resource-dir=$(clang -print-resource-dir) \
                             -p ./build/debug/ \
-                            --output ./build/debug/architecture.json \
-                            $(find ./source/ -type f)
+                            $(find ./source/ -type f) \
+                            | gzip > ./build/debug/architecture.json.gz
                         '''
                     }
                 }
@@ -221,7 +233,8 @@ pipeline {
                     build/release/*.rpm,
                     build/release/*.tar.gz,
                     build/release/*.zip,
-                    build/debug/architecture.json
+                    build/debug/architecture.json.gz,
+                    build/docker/clang-architecture-oci.tar.gz
                 '''.stripIndent().trim(),
                 fingerprint: true
             )
@@ -236,14 +249,12 @@ pipeline {
             ])
 
             recordIssues(
-                enabledForFailure: true,
                 tools: [
                     sarif(pattern: 'build/debug/reports/codechecker/sarif/report.sarif')
                 ]
             )
 
             recordCoverage(
-                enabledForFailure: true,
                 sourceCodeRetention: 'MODIFIED',
                 tools: [[
                     parser: 'COBERTURA',
