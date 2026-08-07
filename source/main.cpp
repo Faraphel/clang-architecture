@@ -18,7 +18,7 @@ static llvm::cl::opt<std::string> tool_option_output(
     llvm::cl::Optional,
     llvm::cl::desc("output table path"),
     llvm::cl::value_desc("path"),
-    llvm::cl::init(std::filesystem::path("/dev/stdout"))
+    llvm::cl::init("-")
 );
 static llvm::cl::alias tool_option_output_short(
     "o",
@@ -71,12 +71,24 @@ int main(int argc, const char* argv[]) {
         throw std::runtime_error("could not index the source code.");
 
     // open the output file
-    std::filesystem::path output_path = tool_option_output.getValue();
-    std::ofstream output_file(output_path);
+    std::shared_ptr<llvm::raw_ostream> output_file = {
+        &llvm::outs(),
+        [](auto*) {}
+    };  // by default, use the standard output
+
+    std::string output_path = tool_option_output.getValue();
+    if (output_path != "-") {
+        std::error_code error_code;
+        output_file = std::make_shared<llvm::raw_fd_ostream>(output_path, error_code);
+        if (error_code) {
+            llvm::errs() << "Cannot open output file: " << error_code.message() << '\n';
+            return EXIT_FAILURE;
+        }
+    }
 
     // get the result document and output it
     const nlohmann::json& document = consumer->getDocument();
-    output_file << document.dump(
+    *output_file << document.dump(
         4,
         ' ',
         false,
